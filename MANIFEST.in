@@ -1,0 +1,6 @@
+include README.md LICENSE CHANGELOG.md
+include bulwark.policy.example.yaml
+recursive-include src/bulwark/data *
+recursive-include docs *.md
+prune tests
+prune build

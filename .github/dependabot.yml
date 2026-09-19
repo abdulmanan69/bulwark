@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # The package itself has no runtime dependencies; this keeps the dev and CI
+  # toolchain current, which is where a supply-chain problem would actually
+  # reach this project.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels: ["dependencies"]
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels: ["dependencies", "ci"]

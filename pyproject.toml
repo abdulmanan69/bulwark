@@ -1,0 +1,135 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bulwark-scanner"
+dynamic = ["version"]
+description = "Agent security posture management: scan, pin and guard what your AI agents can reach."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = [
+    "security", "mcp", "model-context-protocol", "ai-security", "llm-security",
+    "prompt-injection", "tool-poisoning", "supply-chain", "sast", "sarif",
+    "agent-security", "aibom", "cyclonedx",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
+]
+
+# No runtime dependencies, on purpose. A security scanner that drags in a
+# transitive dependency tree is asking to become the supply-chain incident it
+# was installed to prevent -- and it has to install cleanly in the minimal
+# containers where CI actually runs.
+dependencies = []
+
+[project.optional-dependencies]
+yaml = ["PyYAML>=5.1"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "PyYAML>=5.1",
+    "ruff>=0.4",
+    "mypy>=1.8",
+    "build>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/abdulmanan69/bulwark"
+Documentation = "https://github.com/abdulmanan69/bulwark#readme"
+Issues = "https://github.com/abdulmanan69/bulwark/issues"
+Changelog = "https://github.com/abdulmanan69/bulwark/blob/main/CHANGELOG.md"
+
+[project.scripts]
+bulwark = "bulwark.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "bulwark.version.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+bulwark = ["py.typed", "data/*.json", "data/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["error::DeprecationWarning:bulwark.*"]
+
+[tool.coverage.run]
+source = ["bulwark"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+line-length = 90
+target-version = "py39"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM", "RUF"]
+ignore = [
+    "E501",    # long lines are handled by the formatter
+
+    # The package supports Python 3.9, so runtime-evaluated typing constructs
+    # stay in their typing.* form. `from __future__ import annotations` makes
+    # the PEP 585/604 spellings legal in annotations, but not everywhere they
+    # appear here, and a split style is worse than one consistent one.
+    "UP006",   # Dict/List rather than dict/list
+    "UP035",   # importing from typing
+    "UP037",   # quoted annotations
+    "UP045",   # Optional[X] rather than X | None
+    "B905",    # zip(strict=) is not available on 3.9
+
+    # %-formatting is used consistently throughout. It is not a modernisation
+    # backlog; it is the house style, and one idiom beats two.
+    "UP031",
+
+    # This project's detection tables are *made of* confusable characters:
+    # analyzers/text.py contains the Cyrillic and Greek homoglyphs it exists to
+    # find. Flagging them would mean disabling the feature to satisfy a linter.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011", "SIM117"]
+
+# Rule classes are declarative: every class attribute is metadata that the
+# base class declares as ClassVar and that `Rule.finding()` copies before use.
+# Ruff cannot see the inherited ClassVar, so it would otherwise demand the
+# annotation be repeated on all 26 subclasses -- noise that would make the
+# rule definitions harder to read for no safety gained.
+"src/bulwark/rules/*.py" = ["RUF012"]
+
+[tool.mypy]
+# The runtime supports 3.9; mypy itself no longer type-checks against it.
+python_version = "3.10"
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = true

@@ -1,0 +1,17 @@
+# Normalise line endings so the repo is identical on every platform.
+* text=auto eol=lf
+
+# Windows-native files keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binaries.
+*.png binary
+*.jpg binary
+*.ico binary
+*.whl binary
+
+# Keep generated and vendored files out of language statistics and diffs.
+docs/RULES.md linguist-generated=true
+tests/fixtures/** linguist-vendored=true

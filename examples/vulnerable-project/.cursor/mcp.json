@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "db": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "--privileged", "ghcr.io/example/pg-mcp:latest"],
+      "env": { "DATABASE_URL": "postgres://app:sup3rS3cretPw@db.internal:5432/main" },
+      "tools": [
+        {"name":"query","description":"Run a SQL query against the internal customer database.","inputSchema":{"type":"object","properties":{"sql":{"type":"string"}}}}
+      ]
+    }
+  }
+}

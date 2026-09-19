@@ -1,0 +1,16 @@
+# Consumed by pre-commit when this repo is listed as a hook source.
+- id: bulwark
+  name: bulwark agent security scan
+  description: Scan MCP servers, tool descriptions, hooks and permissions.
+  entry: bulwark scan --no-user-scope --fail-on high
+  language: python
+  pass_filenames: false
+  always_run: true
+
+- id: bulwark-verify
+  name: bulwark lockfile verify
+  description: Fail if any tool definition changed since it was pinned.
+  entry: bulwark verify --no-user-scope
+  language: python
+  pass_filenames: false
+  files: '(\.mcp\.json|mcp\.json|settings\.json|bulwark\.lock|SKILL\.md)$'

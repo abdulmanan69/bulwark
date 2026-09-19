@@ -1,0 +1,29 @@
+name: Missed detection
+description: Something dangerous that Bulwark did not flag
+title: "[MISS] not detected: ..."
+labels: ["detection-gap"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is a bypass of an existing rule that could be used against real
+        users, please report it privately instead:
+        [Security advisories](https://github.com/abdulmanan69/bulwark/security/advisories/new).
+  - type: textarea
+    id: input
+    attributes:
+      label: The config, description or payload
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: What an attacker gains
+    validations:
+      required: true
+  - type: input
+    id: rule
+    attributes:
+      label: Which rule should have caught it, if any
+      placeholder: BW-INJ-001, or "new rule needed"

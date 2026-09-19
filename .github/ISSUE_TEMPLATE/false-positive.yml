@@ -1,0 +1,39 @@
+name: False positive
+description: Bulwark flagged something that is actually fine
+title: "[FP] BW-XXX-000 fires on ..."
+labels: ["false-positive", "priority: high"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A false positive is treated as a high-priority bug. A scanner that
+        cries wolf gets muted, and a muted scanner catches nothing.
+  - type: input
+    id: rule
+    attributes:
+      label: Rule id
+      placeholder: BW-INJ-001
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: The config or string that triggered it
+      description: Redact any real secrets. A minimal reproduction is ideal.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it is benign
+      description: What is this tool or setting legitimately doing?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Bulwark version
+      placeholder: "0.1.0  (bulwark --version)"
+    validations:
+      required: true

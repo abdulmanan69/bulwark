@@ -1,0 +1,124 @@
+# A composite action so other repositories can adopt Bulwark in one step.
+name: "Bulwark agent security scan"
+description: "Scan MCP servers, tool descriptions, hooks and permissions for agent security issues."
+author: "Bulwark"
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  path:
+    description: "Directory to scan."
+    required: false
+    default: "."
+  fail-on:
+    description: "Severity at or above which the step fails (CRITICAL/HIGH/MEDIUM/LOW/INFO/never)."
+    required: false
+    default: "high"
+  format:
+    description: "Report format: sarif, json, markdown, html, junit."
+    required: false
+    default: "sarif"
+  output:
+    description: "Where to write the report."
+    required: false
+    default: "bulwark.sarif"
+  policy:
+    description: "Path to a bulwark.policy.yaml."
+    required: false
+    default: ""
+  verify:
+    description: "Also run `bulwark verify` against bulwark.lock."
+    required: false
+    default: "false"
+  upload-sarif:
+    description: "Upload the SARIF to GitHub code scanning."
+    required: false
+    default: "true"
+  version:
+    description: "Version of bulwark-scanner to install."
+    required: false
+    default: "latest"
+
+outputs:
+  posture-score:
+    description: "0-100 posture score."
+    value: ${{ steps.scan.outputs.posture-score }}
+  grade:
+    description: "Letter grade A-F."
+    value: ${{ steps.scan.outputs.grade }}
+  findings:
+    description: "Number of active findings."
+    value: ${{ steps.scan.outputs.findings }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Bulwark
+      shell: bash
+      run: |
+        if [ "${{ inputs.version }}" = "latest" ]; then
+          python -m pip install --quiet --upgrade bulwark-scanner
+        else
+          python -m pip install --quiet "bulwark-scanner==${{ inputs.version }}"
+        fi
+
+    - name: Scan
+      id: scan
+      shell: bash
+      # `--no-user-scope` is not optional in CI: without it the scan would also
+      # report on whatever the runner happens to have in its home directory.
+      run: |
+        set +e
+        ARGS=(scan "${{ inputs.path }}" --no-user-scope
+              --format "${{ inputs.format }}" -o "${{ inputs.output }}"
+              --fail-on "${{ inputs.fail-on }}")
+        if [ -n "${{ inputs.policy }}" ]; then ARGS+=(--policy "${{ inputs.policy }}"); fi
+        bulwark "${ARGS[@]}"
+        SCAN_EXIT=$?
+
+        # A second pass to JSON purely so the summary numbers are exact rather
+        # than scraped out of the chosen format.
+        bulwark scan "${{ inputs.path }}" --no-user-scope --format json \
+                -o /tmp/bulwark-summary.json --fail-on never >/dev/null 2>&1
+        python - <<'PY' >> "$GITHUB_OUTPUT"
+        import json, os
+        with open("/tmp/bulwark-summary.json", encoding="utf-8") as fh:
+            summary = json.load(fh)["summary"]
+        print("posture-score=%s" % summary["posture_score"])
+        print("grade=%s" % summary["grade"])
+        print("findings=%s" % summary["findings"])
+        PY
+
+        python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+        import json
+        with open("/tmp/bulwark-summary.json", encoding="utf-8") as fh:
+            data = json.load(fh)
+        s = data["summary"]
+        print("## Bulwark agent security\n")
+        print("**Posture %s/100 (grade %s)** across %s artifacts\n"
+              % (s["posture_score"], s["grade"], s["artifacts"]))
+        print("| Severity | Count |\n|---|---|")
+        for level in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
+            print("| %s | %s |" % (level, s["counts"][level]))
+        top = [f for f in data["findings"] if not f["waived"]][:10]
+        if top:
+            print("\n### Top findings\n")
+            for f in top:
+                where = f["location"].get("path", "")
+                print("- `%s` **%s** %s — `%s`"
+                      % (f["severity"], f["rule_id"], f["title"], where))
+        PY
+        exit $SCAN_EXIT
+
+    - name: Verify the lockfile
+      if: inputs.verify == 'true'
+      shell: bash
+      run: bulwark verify "${{ inputs.path }}" --no-user-scope
+
+    - name: Upload SARIF
+      if: always() && inputs.upload-sarif == 'true' && inputs.format == 'sarif'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.output }}
+        category: bulwark

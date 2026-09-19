@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+title: "Bulwark: agent security posture management for MCP and AI agents"
+message: "If you use Bulwark in research or a security assessment, please cite it."
+type: software
+authors:
+  - given-names: Abdul
+    family-names: Manan
+    alias: abdulmanan69
+repository-code: "https://github.com/abdulmanan69/bulwark"
+url: "https://github.com/abdulmanan69/bulwark"
+license: Apache-2.0
+version: 0.1.0
+abstract: >-
+  Bulwark inventories the attack surface reachable by AI coding agents -- MCP
+  servers, tool descriptions, hooks, permission rules, skills and persistent
+  instruction files -- and detects prompt injection in tool descriptions,
+  Unicode-smuggled payloads, post-review definition changes (rug pulls),
+  supply-chain weaknesses, excessive agency, and the combination of private
+  data access, untrusted input and outbound egress in a single agent. It pins
+  reviewed tool definitions to a lockfile and enforces that pin at runtime
+  through an MCP proxy.
+keywords:
+  - security
+  - mcp
+  - model-context-protocol
+  - ai-security
+  - llm-security
+  - prompt-injection
+  - tool-poisoning
+  - supply-chain-security
+  - agent-security
+  - sarif
+  - cyclonedx
+  - aibom

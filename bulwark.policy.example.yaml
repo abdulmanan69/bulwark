@@ -1,0 +1,68 @@
+# Bulwark policy - copy to bulwark.policy.yaml and edit.
+#
+# Everything here is optional. With no policy file at all, Bulwark runs every
+# rule and fails CI at HIGH or above.
+
+# Severity at or above which `bulwark scan` exits non-zero.
+# CRITICAL | HIGH | MEDIUM | LOW | INFO
+fail_on: HIGH
+
+rules:
+  # Turn rules off by id, glob or `category:<name>`.
+  disable:
+    - BW-DRF-002        # we pin on release, not on every commit
+
+  # Run ONLY these (omit to run everything).
+  # enable:
+  #   - BW-INJ-*
+  #   - category:supply-chain
+
+  # Re-score a rule for this organisation.
+  severity:
+    BW-SUP-006: MEDIUM
+
+# Accepted risk. A waiver marks a finding as decided rather than deleting it:
+# reports still show the count, and `--show-waived` shows the detail.
+#
+# `expires` is YYYY-MM-DD, evaluated at end of day UTC. An expired waiver
+# stops suppressing and is announced, because a waiver nobody revisits is not
+# a decision anyone should be relying on.
+waivers:
+  - rule: BW-SUP-001
+    artifact: legacy-notes
+    reason: "vendor publishes no pinned build; tracked in SEC-1481"
+    owner: platform-security
+    expires: "2026-03-31"
+
+  # Lower a severity instead of hiding the finding entirely.
+  - rule: BW-CMP-004
+    artifact: "internal-*"
+    downgrade_to: LOW
+    reason: "internal tools are reviewed at merge"
+    owner: platform-security
+    expires: "2026-06-30"
+
+# Findings accepted wholesale at adoption time, by id (the `id` field in JSON
+# output). Useful for turning a large existing estate green so that only *new*
+# problems break the build.
+baseline: []
+
+# Extend typosquat screening with the packages your organisation publishes,
+# so an impersonation of your own name is caught too.
+known_packages:
+  - "@acme/internal-mcp"
+  - "acme-agent-tools"
+
+# Your own injection patterns, no code required. `family` is one of:
+# override, concealment, credential, exfiltration, hijack, authority,
+# role_forgery, persistence, evasion.
+injection_patterns:
+  - id: ACME.EXFIL.DROPBOX
+    family: exfiltration
+    regex: 'upload\s+(?:it\s+)?to\s+dropbox'   # single-quote regexes: YAML
+    #   treats backslash escapes inside double quotes, and \s is not one of them
+    note: "our data policy forbids third-party file sharing from agents"
+
+# Your own rules, loaded into the same registry and pipeline.
+# plugins:
+#   - "./security/acme_rules.py"
