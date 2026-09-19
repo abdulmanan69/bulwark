@@ -39,15 +39,54 @@ SKIP_DIRS = frozenset(
 
 
 @dataclass
+class WalkStats:
+    """What a traversal looked at, and what it deliberately did not.
+
+    A security scanner must never present a clean result without disclosing
+    its own coverage. "No findings" and "no findings in the 4% of the tree I
+    walked" are different claims, and only one of them is safe to act on.
+    """
+
+    directories: int = 0
+    skipped: Dict[str, int] = field(default_factory=dict)
+    truncated: List[str] = field(default_factory=list)
+
+    def note_skip(self, name: str) -> None:
+        self.skipped[name] = self.skipped.get(name, 0) + 1
+
+    def merge(self, other: "WalkStats") -> None:
+        self.directories += other.directories
+        for name, count in other.skipped.items():
+            self.skipped[name] = self.skipped.get(name, 0) + count
+        for path in other.truncated:
+            if path not in self.truncated:
+                self.truncated.append(path)
+
+    @property
+    def complete(self) -> bool:
+        return not self.skipped and not self.truncated
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "directories_walked": self.directories,
+            "directories_skipped": dict(sorted(self.skipped.items())),
+            "truncated_at_depth": list(self.truncated),
+            "complete": self.complete,
+        }
+
+
+@dataclass
 class CollectionResult:
     artifacts: List[Artifact] = field(default_factory=list)
     errors: List[ScanError] = field(default_factory=list)
     files_seen: List[str] = field(default_factory=list)
+    coverage: WalkStats = field(default_factory=WalkStats)
 
     def extend(self, other: "CollectionResult") -> None:
         self.artifacts.extend(other.artifacts)
         self.errors.extend(other.errors)
         self.files_seen.extend(other.files_seen)
+        self.coverage.merge(other.coverage)
 
     def fail(self, where: str, exc: BaseException, kind: str = "parse_error") -> None:
         self.errors.append(
@@ -231,6 +270,7 @@ def iter_files(
     *,
     max_depth: int = 6,
     skip_dirs: Iterable[str] = SKIP_DIRS,
+    stats: Optional[WalkStats] = None,
 ) -> Iterator[str]:
     """Walk ``root`` yielding files whose basename matches any glob pattern."""
     root = os.path.abspath(root)
@@ -240,10 +280,22 @@ def iter_files(
     root_depth = root.rstrip(os.sep).count(os.sep)
 
     for current, dirnames, filenames in os.walk(root, topdown=True):
+        if stats is not None:
+            stats.directories += 1
         depth = current.rstrip(os.sep).count(os.sep) - root_depth
         if depth >= max_depth:
+            if dirnames and stats is not None:
+                stats.truncated.append(current)
             dirnames[:] = []
-        dirnames[:] = [d for d in dirnames if d not in skip and d != ".git"]
+
+        keep = []
+        for d in dirnames:
+            if d in skip or d == ".git":
+                if stats is not None:
+                    stats.note_skip(d)
+                continue
+            keep.append(d)
+        dirnames[:] = keep
         for filename in filenames:
             for pattern in patterns:
                 if fnmatch.fnmatch(filename, pattern):
@@ -295,6 +347,7 @@ def find_nested(
     *,
     max_depth: int = PROJECT_CONFIG_DEPTH,
     exclude: Sequence[str] = (),
+    stats: Optional[WalkStats] = None,
 ) -> List[str]:
     """Every file under ``root`` matching any pattern, the root included.
 
@@ -305,7 +358,7 @@ def find_nested(
 
     One traversal covers all patterns, so adding a filename costs no extra I/O.
     """
-    found = iter_files(root, patterns, max_depth=max_depth)
+    found = iter_files(root, patterns, max_depth=max_depth, stats=stats)
     return sorted({p for p in found if not is_excluded(p, exclude, root)})
 
 

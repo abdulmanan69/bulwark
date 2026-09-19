@@ -47,7 +47,17 @@ def discover(
     included, while a CI job scanning a repository must not report on whatever
     the build agent happens to have in its home directory.
     """
-    normalised_roots = [os.path.abspath(root) for root in roots if root]
+    # Pointing at a config file rather than a directory is a reasonable thing
+    # to do -- `bulwark scan .mcp.json` -- and silently reporting nothing for
+    # it is the same false-clean failure as never walking the tree.
+    normalised_roots = []
+    for root in roots:
+        if not root:
+            continue
+        absolute = os.path.abspath(root)
+        normalised_roots.append(
+            os.path.dirname(absolute) if os.path.isfile(absolute) else absolute
+        )
 
     if include_user_scope:
         resolved_home = home if home is not None else home_dir()
@@ -74,6 +84,16 @@ def discover(
             )
 
     combined.artifacts = _dedupe(combined.artifacts)
+    if not combined.coverage.complete:
+        # A clean report must say what it did not look at, or the clean part
+        # is not something anyone can safely rely on.
+        combined.errors.append(
+            ScanError(
+                where="coverage",
+                message=_describe_coverage(combined.coverage),
+                kind="coverage",
+            )
+        )
     combined.files_seen = sorted(set(combined.files_seen))
     return combined
 
@@ -104,3 +124,20 @@ def _dedupe(artifacts: Sequence[Artifact]) -> List[Artifact]:
         index[key] = artifact
         out.append(artifact)
     return out
+
+
+def _describe_coverage(stats) -> str:
+    """A one-line, honest statement of what the walk left out."""
+    parts = ["%d directories walked" % stats.directories]
+    if stats.skipped:
+        top = sorted(stats.skipped.items(), key=lambda kv: -kv[1])[:4]
+        parts.append(
+            "%d skipped (%s)"
+            % (
+                sum(stats.skipped.values()),
+                ", ".join("%s x%d" % (name, count) for name, count in top),
+            )
+        )
+    if stats.truncated:
+        parts.append("%d truncated at the depth limit" % len(stats.truncated))
+    return "; ".join(parts)

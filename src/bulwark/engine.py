@@ -74,6 +74,7 @@ class Engine:
         result.errors.extend(collected.errors)
         result.metadata["files_scanned"] = len(collected.files_seen)
         result.metadata["excluded"] = excludes
+        result.metadata["coverage"] = collected.coverage.to_dict()
         result.metadata["files"] = collected.files_seen
 
         # --- 2. enrich ----------------------------------------------------

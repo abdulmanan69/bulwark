@@ -183,6 +183,54 @@ class TestDiscovery:
         assert len(rules) == 2
         assert len({a.identity for a in rules}) == 2
 
+    def test_a_config_file_can_be_the_target(self, project, isolated_home):
+        # `bulwark scan .mcp.json` is a reasonable thing to type, and silently
+        # reporting nothing for it is the same false-clean failure as never
+        # walking the tree at all.
+        path = write_mcp(project, {"s": {"command": "node", "args": ["./a.js"]}})
+        collected = discover([str(path)], home=isolated_home)
+        assert "s" in {a.identity for a in collected.artifacts}
+
+    def test_coverage_is_complete_when_nothing_was_skipped(
+        self, project, isolated_home
+    ):
+        write_mcp(project, {"s": {"command": "node", "args": ["./a.js"]}})
+        collected = discover([str(project)], home=isolated_home)
+        assert collected.coverage.complete
+        assert not any(e.kind == "coverage" for e in collected.errors)
+
+    def test_skipping_a_directory_is_disclosed(self, project, isolated_home):
+        # Skipping vendored trees is correct. Doing it silently is not: a
+        # clean result has to say what it did not look at.
+        write_mcp(
+            project / "node_modules" / "pkg",
+            {"vendored": {"command": "node", "args": ["./x.js"]}},
+        )
+        collected = discover([str(project)], home=isolated_home)
+
+        assert not collected.coverage.complete
+        assert "node_modules" in collected.coverage.skipped
+        notices = [e for e in collected.errors if e.kind == "coverage"]
+        assert notices and "skipped" in notices[0].message
+
+    def test_hitting_the_depth_limit_is_disclosed(self, project, isolated_home):
+        deep = project.joinpath(*[str(n) for n in range(12)])
+        deep.mkdir(parents=True, exist_ok=True)
+        write_mcp(deep, {"buried": {"command": "node", "args": ["./x.js"]}})
+
+        collected = discover([str(project)], home=isolated_home)
+        assert "buried" not in {a.identity for a in collected.artifacts}
+        assert collected.coverage.truncated, "a truncated walk must be reported"
+
+    def test_coverage_reaches_the_scan_metadata(self, project, scan_project):
+        write_mcp(
+            project / "node_modules" / "pkg",
+            {"vendored": {"command": "node", "args": ["./x.js"]}},
+        )
+        coverage = scan_project(project).metadata["coverage"]
+        assert coverage["complete"] is False
+        assert coverage["directories_skipped"]["node_modules"] >= 1
+
     def test_vendored_directories_are_not_walked(self, project, isolated_home):
         write_mcp(
             project / "node_modules" / "somepkg",

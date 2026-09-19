@@ -29,6 +29,7 @@ from ..core.models import Artifact, ArtifactKind, SourceRef
 from .base import (
     CollectionResult,
     Collector,
+    WalkStats,
     app_data_dirs,
     existing,
     find_nested,
@@ -86,12 +87,17 @@ class McpConfigCollector(Collector):
 
     name = "mcp-config"
 
+    def __init__(self) -> None:
+        self.coverage = WalkStats()
+
     def collect(
         self, roots: Sequence[str], home: str, exclude: Sequence[str] = ()
     ) -> CollectionResult:
         result = CollectionResult()
+        self.coverage = WalkStats()
         for path, platform in self._candidate_files(roots, home, exclude):
             self._collect_file(path, platform, result)
+        result.coverage = self.coverage
         return result
 
     # ---- where to look --------------------------------------------------
@@ -149,7 +155,9 @@ class McpConfigCollector(Collector):
         # in each package, and only checking the top reports a clean result for
         # a repository full of servers.
         for root in roots:
-            for path in find_nested(root, PROJECT_CONFIG_PATTERNS, exclude=exclude):
+            for path in find_nested(
+                root, PROJECT_CONFIG_PATTERNS, exclude=exclude, stats=self.coverage
+            ):
                 add(path, _platform_for(path))
 
         present = set(existing(*[path for path, _ in candidates]))

@@ -132,6 +132,20 @@ class TerminalReporter:
                 )
         self.write("  " + ("   ".join(parts) if parts else "no findings"))
 
+        coverage = result.metadata.get("coverage") or {}
+        if coverage and not coverage.get("complete", True):
+            skipped = sum((coverage.get("directories_skipped") or {}).values())
+            truncated = len(coverage.get("truncated_at_depth") or [])
+            bits = ["%s directories walked" % coverage.get("directories_walked", 0)]
+            if skipped:
+                bits.append("%d skipped" % skipped)
+            if truncated:
+                bits.append("%d cut off at the depth limit" % truncated)
+            self.write(
+                "  coverage: %s"
+                % self.paint(", ".join(bits), _COLOURS[Severity.MEDIUM])
+            )
+
         lock = result.metadata.get("lockfile") or {}
         if lock.get("present"):
             changes = lock.get("changes") or []
