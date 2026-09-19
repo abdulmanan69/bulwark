@@ -42,6 +42,16 @@ waivers:
     owner: platform-security
     expires: "2026-06-30"
 
+# Paths never scanned at all. Prefer this over waivers for directories that
+# are not real configuration -- test fixtures, vendored trees, deliberately
+# vulnerable examples. Exclusion happens during discovery, so nothing in an
+# excluded path can contribute to a finding, including composite rules like
+# the trifecta that carry no path of their own.
+exclude:
+  - "examples/**"
+  - "**/fixtures/**"
+  - "**/testdata/**"
+
 # Findings accepted wholesale at adoption time, by id (the `id` field in JSON
 # output). Useful for turning a large existing estate green so that only *new*
 # problems break the build.

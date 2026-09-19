@@ -28,10 +28,13 @@ from .base import (
     Collector,
     app_data_dirs,
     existing,
+    find_nested,
+    find_nested_dirs,
     is_world_readable,
     iter_files,
     load_json_file,
     read_text,
+    relative_to,
     source_for,
     split_front_matter,
 )
@@ -67,7 +70,9 @@ class AgentConfigCollector(Collector):
 
     name = "agent-config"
 
-    def collect(self, roots: Sequence[str], home: str) -> CollectionResult:
+    def collect(
+        self, roots: Sequence[str], home: str, exclude: Sequence[str] = ()
+    ) -> CollectionResult:
         result = CollectionResult()
         dirs = app_data_dirs(home)
 
@@ -79,12 +84,18 @@ class AgentConfigCollector(Collector):
         ]
         agent_dirs: List[Tuple[str, str]] = [(os.path.join(home, ".claude"), "user")]
 
+        # Walked, not stat-ed: each package in a monorepo can carry its own
+        # .claude directory, and only checking the top of the tree reports a
+        # clean result for a repository full of them.
         for root in roots:
-            settings_files.append((os.path.join(root, ".claude", "settings.json"), "project"))
-            settings_files.append(
-                (os.path.join(root, ".claude", "settings.local.json"), "local")
-            )
-            agent_dirs.append((os.path.join(root, ".claude"), "project"))
+            for claude_dir in find_nested_dirs(root, [".claude"], exclude=exclude):
+                settings_files.append(
+                    (os.path.join(claude_dir, "settings.json"), "project")
+                )
+                settings_files.append(
+                    (os.path.join(claude_dir, "settings.local.json"), "local")
+                )
+                agent_dirs.append((claude_dir, "project"))
 
         for path, scope in settings_files:
             if os.path.isfile(path):
@@ -95,9 +106,9 @@ class AgentConfigCollector(Collector):
                 self._collect_markdown_surfaces(directory, scope, result)
 
         for root in roots:
-            self._collect_rules_files(root, result)
-            self._collect_cursor_rules(root, result)
-            self._collect_env_files(root, result)
+            self._collect_rules_files(root, result, exclude)
+            self._collect_cursor_rules(root, result, exclude)
+            self._collect_env_files(root, result, exclude)
 
         return result
 
@@ -151,11 +162,11 @@ class AgentConfigCollector(Collector):
 
     # ---- rules / memory files ---------------------------------------------
 
-    def _collect_rules_files(self, root: str, result: CollectionResult) -> None:
-        for name in RULES_FILES:
-            path = os.path.join(root, name)
-            if not os.path.isfile(path):
-                continue
+    def _collect_rules_files(
+        self, root: str, result: CollectionResult, exclude: Sequence[str] = ()
+    ) -> None:
+        for path in find_nested(root, RULES_FILES, exclude=exclude):
+            name = os.path.basename(path)
             text = read_text(path)
             if text is None:
                 continue
@@ -163,7 +174,9 @@ class AgentConfigCollector(Collector):
             result.artifacts.append(
                 Artifact(
                     kind=ArtifactKind.SKILL,
-                    identity="rules:" + name,
+                    # Keyed by location, not basename: a monorepo has one
+                    # CLAUDE.md per package and they are not the same file.
+                    identity="rules:" + relative_to(path, root),
                     name=name,
                     platform="agent-rules",
                     source=SourceRef(path=path),
@@ -173,10 +186,18 @@ class AgentConfigCollector(Collector):
                 )
             )
 
-    def _collect_cursor_rules(self, root: str, result: CollectionResult) -> None:
-        base = os.path.join(root, ".cursor", "rules")
-        if not os.path.isdir(base):
-            return
+    def _collect_cursor_rules(
+        self, root: str, result: CollectionResult, exclude: Sequence[str] = ()
+    ) -> None:
+        bases = [
+            os.path.join(cursor_dir, "rules")
+            for cursor_dir in find_nested_dirs(root, [".cursor"], exclude=exclude)
+        ]
+        for base in bases:
+            if os.path.isdir(base):
+                self._collect_cursor_rule_files(base, result)
+
+    def _collect_cursor_rule_files(self, base: str, result: CollectionResult) -> None:
         for path in iter_files(base, ["*.mdc", "*.md"], max_depth=3):
             artifact = _markdown_artifact(
                 path, ArtifactKind.SKILL, "cursor-rule", "project"
@@ -187,9 +208,11 @@ class AgentConfigCollector(Collector):
 
     # ---- .env -------------------------------------------------------------
 
-    def _collect_env_files(self, root: str, result: CollectionResult) -> None:
+    def _collect_env_files(
+        self, root: str, result: CollectionResult, exclude: Sequence[str] = ()
+    ) -> None:
         names = (".env", ".env.local", ".env.development", ".env.production")
-        for path in existing(*[os.path.join(root, name) for name in names]):
+        for path in find_nested(root, names, exclude=exclude):
             text = read_text(path)
             if text is None:
                 continue
@@ -197,7 +220,7 @@ class AgentConfigCollector(Collector):
             result.artifacts.append(
                 Artifact(
                     kind=ArtifactKind.ENV_FILE,
-                    identity="env:" + os.path.basename(path),
+                    identity="env:" + relative_to(path, root),
                     name=os.path.basename(path),
                     platform="project",
                     source=SourceRef(path=path),

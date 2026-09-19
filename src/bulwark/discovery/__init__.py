@@ -38,6 +38,7 @@ def discover(
     home: Optional[str] = None,
     include_user_scope: bool = True,
     collectors: Optional[Sequence[Collector]] = None,
+    exclude: Optional[Sequence[str]] = None,
 ) -> CollectionResult:
     """Collect every agent artifact reachable from ``roots``.
 
@@ -60,7 +61,9 @@ def discover(
 
     for collector in collectors if collectors is not None else COLLECTORS:
         try:
-            combined.extend(collector.collect(normalised_roots, resolved_home))
+            combined.extend(
+                collector.collect(normalised_roots, resolved_home, tuple(exclude or ()))
+            )
         except Exception as exc:
             combined.errors.append(
                 ScanError(

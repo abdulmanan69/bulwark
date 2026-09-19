@@ -137,6 +137,115 @@ class TestDiscovery:
         )
         assert artifact.data["wildcard"] == breadth
 
+    def test_nested_configs_are_found_in_a_monorepo(self, project, isolated_home):
+        """The worst failure mode a scanner has is a clean result it did not earn.
+
+        Discovery used to stat only the root of each target, so a monorepo with
+        a .mcp.json per package scanned as grade A with zero artifacts -- a
+        green light on a repository full of servers.
+        """
+        write_mcp(
+            project / "packages" / "api",
+            {"db": {"command": "npx", "args": ["-y", "pg-mcp"]}},
+        )
+        write_mcp(
+            project / "packages" / "web",
+            {"notes": {"command": "uvx", "args": ["notes-mcp"]}},
+            name=".cursor/mcp.json",
+        )
+        deep = project / "services" / "worker"
+        deep.mkdir(parents=True, exist_ok=True)
+        (deep / "CLAUDE.md").write_text(
+            "# Worker rules\n\nUse tabs.\n", encoding="utf-8"
+        )
+
+        collected = discover([str(project)], home=isolated_home)
+        identities = {a.identity for a in collected.artifacts}
+
+        assert "db" in identities, "nested .mcp.json missed"
+        assert "notes" in identities, "nested .cursor/mcp.json missed"
+        assert any(i.startswith("rules:") for i in identities), "nested CLAUDE.md missed"
+
+    def test_same_named_files_in_different_packages_stay_distinct(
+        self, project, isolated_home
+    ):
+        # Keyed by basename, two packages' CLAUDE.md would collide and one
+        # would silently disappear from the report.
+        for package, body in (("api", "Use tabs."), ("web", "Use spaces.")):
+            directory = project / "packages" / package
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "CLAUDE.md").write_text(
+                "# Rules\n\n%s\n" % body, encoding="utf-8"
+            )
+
+        collected = discover([str(project)], home=isolated_home)
+        rules = [a for a in collected.artifacts if a.identity.startswith("rules:")]
+        assert len(rules) == 2
+        assert len({a.identity for a in rules}) == 2
+
+    def test_vendored_directories_are_not_walked(self, project, isolated_home):
+        write_mcp(
+            project / "node_modules" / "somepkg",
+            {"vendored": {"command": "node", "args": ["./x.js"]}},
+        )
+        collected = discover([str(project)], home=isolated_home)
+        assert "vendored" not in {a.identity for a in collected.artifacts}
+
+    def test_exclude_skips_matching_paths(self, project, isolated_home):
+        write_mcp(project / "src", {"real": {"command": "node", "args": ["./a.js"]}})
+        write_mcp(
+            project / "examples", {"fixture": {"command": "node", "args": ["./b.js"]}}
+        )
+
+        everything = discover([str(project)], home=isolated_home)
+        assert {"real", "fixture"} <= {a.identity for a in everything.artifacts}
+
+        filtered = discover([str(project)], home=isolated_home, exclude=["examples/**"])
+        identities = {a.identity for a in filtered.artifacts}
+        assert "real" in identities
+        assert "fixture" not in identities
+
+    @pytest.mark.parametrize(
+        "pattern", ["examples/**", "examples", "examples/*", "**/examples/**"]
+    )
+    def test_exclude_pattern_spellings_all_work(self, project, isolated_home, pattern):
+        # People write directory exclusions several different ways and expect
+        # all of them to mean the same thing.
+        write_mcp(
+            project / "examples", {"fixture": {"command": "node", "args": ["./b.js"]}}
+        )
+        collected = discover([str(project)], home=isolated_home, exclude=[pattern])
+        assert "fixture" not in {a.identity for a in collected.artifacts}
+
+    def test_excluded_files_produce_no_composite_findings(self, project, scan_project):
+        # Exclusion has to happen at discovery, not at reporting: a rule like
+        # the trifecta is derived from tools and carries no path, so filtering
+        # findings afterwards would leave it behind.
+        write_mcp(
+            project / "examples",
+            {
+                "s": {
+                    "command": "node",
+                    "args": ["./s.js"],
+                    "tools": [
+                        {
+                            "name": "read_mail",
+                            "description": "Read email from the inbox.",
+                        },
+                        {
+                            "name": "get_secret",
+                            "description": "Read a vault credential.",
+                        },
+                        {"name": "send_mail", "description": "Send an email message."},
+                    ],
+                }
+            },
+        )
+        assert "BW-CMP-001" in rule_ids(scan_project(project))
+        assert "BW-CMP-001" not in rule_ids(
+            scan_project(project, exclude=["examples/**"])
+        )
+
     def test_skill_front_matter_and_body_are_both_captured(
         self, project, isolated_home
     ):

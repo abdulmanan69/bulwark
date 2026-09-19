@@ -53,6 +53,7 @@ class Engine:
         rule_ids: Optional[Sequence[str]] = None,
         categories: Optional[Sequence[str]] = None,
         online_timeout: float = 20.0,
+        exclude: Optional[Sequence[str]] = None,
     ) -> ScanResult:
         started = time.time()
         normalised = [os.path.abspath(r) for r in roots if r] or [os.path.abspath(".")]
@@ -62,12 +63,17 @@ class Engine:
         )
 
         # --- 1. discover --------------------------------------------------
+        excludes = list(exclude or []) + list(self.policy.exclude)
         collected = discover(
-            normalised, home=home, include_user_scope=include_user_scope
+            normalised,
+            home=home,
+            include_user_scope=include_user_scope,
+            exclude=excludes,
         )
         result.artifacts = list(collected.artifacts)
         result.errors.extend(collected.errors)
         result.metadata["files_scanned"] = len(collected.files_seen)
+        result.metadata["excluded"] = excludes
         result.metadata["files"] = collected.files_seen
 
         # --- 2. enrich ----------------------------------------------------

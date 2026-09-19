@@ -66,7 +66,9 @@ class Collector:
     name: str = ""
     platform: str = ""
 
-    def collect(self, roots: Sequence[str], home: str) -> CollectionResult:
+    def collect(
+        self, roots: Sequence[str], home: str, exclude: Sequence[str] = ()
+    ) -> CollectionResult:
         raise NotImplementedError
 
 
@@ -247,6 +249,100 @@ def iter_files(
                 if fnmatch.fnmatch(filename, pattern):
                     yield os.path.join(current, filename)
                     break
+
+
+def is_excluded(path: str, patterns: Sequence[str], root: str = "") -> bool:
+    """True when a path matches an operator exclusion.
+
+    Matched against both the absolute path and the root-relative one, so
+    `--exclude 'examples/**'` works the way a person expects without them
+    having to know which form the scanner happens to hold.
+    """
+    if not patterns:
+        return False
+    absolute = os.path.abspath(path).replace("\\", "/")
+    candidates = [absolute]
+    if root:
+        relative = relative_to(path, root)
+        candidates.append(relative)
+        candidates.append("./" + relative)
+
+    for pattern in patterns:
+        pattern = pattern.replace("\\", "/")
+        for candidate in candidates:
+            if fnmatch.fnmatch(candidate, pattern):
+                return True
+            # A directory pattern should exclude everything beneath it, which
+            # bare fnmatch does not do because * does not cross the trailing
+            # boundary in the way people assume.
+            trimmed = pattern.rstrip("/*")
+            if trimmed and (
+                candidate == trimmed or candidate.startswith(trimmed + "/")
+            ):
+                return True
+    return False
+
+
+#: How deep to look for agent config inside a scanned project.  Eight levels
+#: reaches `packages/*/apps/*/.cursor/mcp.json` in the monorepo layouts people
+#: actually use, while the skip list keeps the walk off vendored trees.
+PROJECT_CONFIG_DEPTH = 8
+
+
+def find_nested(
+    root: str,
+    patterns: Sequence[str],
+    *,
+    max_depth: int = PROJECT_CONFIG_DEPTH,
+    exclude: Sequence[str] = (),
+) -> List[str]:
+    """Every file under ``root`` matching any pattern, the root included.
+
+    Agent config does not only live at the top of a repository.  A monorepo
+    puts a `.mcp.json` in each package, and a scanner that only stats the root
+    reports a clean result for a project full of them -- which is worse than
+    reporting nothing at all, because a clean result is believed.
+
+    One traversal covers all patterns, so adding a filename costs no extra I/O.
+    """
+    found = iter_files(root, patterns, max_depth=max_depth)
+    return sorted({p for p in found if not is_excluded(p, exclude, root)})
+
+
+def find_nested_dirs(
+    root: str,
+    names: Sequence[str],
+    *,
+    max_depth: int = PROJECT_CONFIG_DEPTH,
+    exclude: Sequence[str] = (),
+) -> List[str]:
+    """Every directory under ``root`` with one of these names.
+
+    Finds the `.claude` and `.cursor` directories of each package in a
+    monorepo, which is where skills, subagents and slash commands live.
+    """
+    root = os.path.abspath(root)
+    if not os.path.isdir(root):
+        return []
+    wanted = {n.lower() for n in names}
+    found: List[str] = []
+    root_depth = root.rstrip(os.sep).count(os.sep)
+
+    for current, dirnames, _ in os.walk(root, topdown=True):
+        if current.rstrip(os.sep).count(os.sep) - root_depth >= max_depth:
+            dirnames[:] = []
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and d != ".git"]
+        # Prune excluded directories from the walk itself, so a huge
+        # vendored tree costs nothing rather than being filtered afterwards.
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if not is_excluded(os.path.join(current, d), exclude, root)
+        ]
+        for name in dirnames:
+            if name.lower() in wanted:
+                found.append(os.path.join(current, name))
+    return sorted(set(found))
 
 
 def existing(*candidates: str) -> List[str]:

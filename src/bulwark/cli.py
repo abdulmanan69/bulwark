@@ -90,6 +90,14 @@ def build_parser() -> argparse.ArgumentParser:
             "--policy", default=None, help="path to a bulwark.policy.yaml file"
         )
         sub.add_argument("--lock", default=None, help="path to the lockfile")
+        sub.add_argument(
+            "--exclude",
+            action="append",
+            default=[],
+            metavar="GLOB",
+            help="skip paths matching this glob (repeatable). Use it for test "
+            "fixtures and vendored trees, e.g. --exclude 'examples/**'",
+        )
 
     # ---- scan ----
     scan_parser = subparsers.add_parser("scan", help="scan for agent security findings")
@@ -277,6 +285,7 @@ def _run_scan(args: argparse.Namespace, policy: Policy) -> ScanResult:
         rule_ids=getattr(args, "rule", None) or None,
         categories=getattr(args, "category", None) or None,
         online_timeout=getattr(args, "online_timeout", 20.0),
+        exclude=getattr(args, "exclude", None) or None,
     )
 
 
@@ -388,6 +397,7 @@ def cmd_pin(args: argparse.Namespace) -> int:
         home=args.home,
         include_user_scope=not args.no_user_scope,
         online=args.online,
+        exclude=args.exclude or None,
     )
 
     changes = summary["changes"]

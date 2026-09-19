@@ -74,7 +74,10 @@ jobs:
       - name: This repository's own agent config must be clean
         # Catches agent configuration accidentally committed to the project,
         # which for a security tool would be its own kind of embarrassment.
-        run: bulwark scan . --no-user-scope --format sarif -o bulwark.sarif --fail-on high
+        # examples/ is excluded because it is deliberately vulnerable; the
+        # next step scans it on purpose and requires it to fail.
+        run: |
+          bulwark scan . --no-user-scope --exclude 'examples/**'                   --format sarif -o bulwark.sarif --fail-on high
 
       - uses: github/codeql-action/upload-sarif@v3
         if: always()

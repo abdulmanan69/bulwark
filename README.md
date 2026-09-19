@@ -166,6 +166,18 @@ Exit codes are the contract: `0` clean, `1` findings at or above the threshold,
 `--no-user-scope` matters in CI: without it, Bulwark would also report on
 whatever the build runner happens to have in its home directory.
 
+Bulwark walks the whole project, so a monorepo with a `.mcp.json` per package
+is fully covered. Use `--exclude` for directories that are not real
+configuration:
+
+```bash
+bulwark scan . --exclude 'examples/**' --exclude '**/fixtures/**'
+```
+
+Exclusion happens during discovery rather than when reporting, so an excluded
+path cannot contribute to a finding at all -- including composite rules like
+the trifecta, which are derived from tools and carry no path of their own.
+
 Other formats: `json`, `junit`, `markdown` (for PR comments), `html`
 (self-contained, no external assets, safe to email).
 
@@ -227,6 +239,7 @@ waivers:
     owner: platform-security
     expires: "2026-03-31"         # expired waivers stop suppressing, loudly
 
+exclude: ["examples/**"]                 # never scanned at all
 known_packages: ["@acme/internal-mcp"]   # extend typosquat screening
 plugins: ["./security/acme_rules.py"]    # your own rules, same pipeline
 

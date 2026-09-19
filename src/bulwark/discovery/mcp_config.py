@@ -31,6 +31,7 @@ from .base import (
     Collector,
     app_data_dirs,
     existing,
+    find_nested,
     is_world_readable,
     load_json_file,
     read_text,
@@ -46,20 +47,58 @@ CONTAINER_KEYS: Tuple[Tuple[str, str], ...] = (
 )
 
 
+#: Filenames that can hold an MCP server declaration inside a project.
+PROJECT_CONFIG_PATTERNS = (
+    ".mcp.json",
+    "mcp.json",
+    "mcp_config.json",
+    "settings.json",
+    "settings.local.json",
+)
+
+
+def _platform_for(path: str) -> str:
+    """Infer the host from the directory a config sits in.
+
+    `mcp.json` means something different under `.cursor` than under `.vscode`,
+    and a bare `settings.json` in some random package is not agent config at
+    all -- it only counts inside a host's own directory.
+    """
+    parent = os.path.basename(os.path.dirname(path)).lower()
+    name = os.path.basename(path).lower()
+
+    by_directory = {
+        ".cursor": "cursor",
+        ".vscode": "vscode",
+        ".claude": "claude-code",
+        ".windsurf": "windsurf",
+        ".codeium": "windsurf",
+    }
+    if parent in by_directory:
+        return by_directory[parent]
+    if name == ".mcp.json":
+        return "claude-code"
+    return "generic"
+
+
 class McpConfigCollector(Collector):
     """Finds MCP server declarations in user-level and project-level configs."""
 
     name = "mcp-config"
 
-    def collect(self, roots: Sequence[str], home: str) -> CollectionResult:
+    def collect(
+        self, roots: Sequence[str], home: str, exclude: Sequence[str] = ()
+    ) -> CollectionResult:
         result = CollectionResult()
-        for path, platform in self._candidate_files(roots, home):
+        for path, platform in self._candidate_files(roots, home, exclude):
             self._collect_file(path, platform, result)
         return result
 
     # ---- where to look --------------------------------------------------
 
-    def _candidate_files(self, roots: Sequence[str], home: str) -> List[Tuple[str, str]]:
+    def _candidate_files(
+        self, roots: Sequence[str], home: str, exclude: Sequence[str] = ()
+    ) -> List[Tuple[str, str]]:
         dirs = app_data_dirs(home)
         candidates: List[Tuple[str, str]] = []
 
@@ -106,16 +145,12 @@ class McpConfigCollector(Collector):
                 )
 
         # --- project scope --------------------------------------------------
+        # Walked rather than stat-ed at the root: a monorepo puts agent config
+        # in each package, and only checking the top reports a clean result for
+        # a repository full of servers.
         for root in roots:
-            add(os.path.join(root, ".mcp.json"), "claude-code")
-            add(os.path.join(root, ".claude", "settings.json"), "claude-code")
-            add(os.path.join(root, ".claude", "settings.local.json"), "claude-code")
-            add(os.path.join(root, ".cursor", "mcp.json"), "cursor")
-            add(os.path.join(root, ".vscode", "mcp.json"), "vscode")
-            add(os.path.join(root, ".vscode", "settings.json"), "vscode")
-            add(os.path.join(root, "mcp.json"), "generic")
-            add(os.path.join(root, "mcp_config.json"), "generic")
-            add(os.path.join(root, ".windsurf", "mcp_config.json"), "windsurf")
+            for path in find_nested(root, PROJECT_CONFIG_PATTERNS, exclude=exclude):
+                add(path, _platform_for(path))
 
         present = set(existing(*[path for path, _ in candidates]))
         seen: Set[str] = set()

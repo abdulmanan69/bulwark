@@ -135,6 +135,10 @@ class Policy:
     injection_patterns: List[Dict[str, str]] = field(default_factory=list)
     known_packages: List[str] = field(default_factory=list)
     plugin_paths: List[str] = field(default_factory=list)
+    #: Paths never scanned. Deliberately part of policy rather than only a
+    #: flag, so "we do not scan our test fixtures" is committed and reviewable
+    #: rather than living in whatever command someone typed.
+    exclude: List[str] = field(default_factory=list)
     source_path: str = ""
     #: Populated during apply() so reports can surface stale decisions.
     expired_waivers: List[Waiver] = field(default_factory=list)
@@ -196,6 +200,7 @@ class Policy:
             ],
             known_packages=[str(p) for p in (data.get("known_packages") or [])],
             plugin_paths=[str(p) for p in (data.get("plugins") or [])],
+            exclude=[str(p) for p in (data.get("exclude") or [])],
         )
 
     def rule_settings(self) -> Dict[str, Any]:
@@ -280,6 +285,7 @@ class Policy:
             "injection_patterns": list(self.injection_patterns),
             "known_packages": list(self.known_packages),
             "plugins": list(self.plugin_paths),
+            "exclude": list(self.exclude),
             "source": self.source_path,
         }
 
