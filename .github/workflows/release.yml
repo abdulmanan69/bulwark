@@ -27,3 +27,9 @@ jobs:
           test "refs/tags/v$VERSION" = "${{ github.ref }}" \
             || { echo "tag ${{ github.ref }} does not match version $VERSION"; exit 1; }
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # A version already on PyPI is not an error worth failing a release
+          # over: it means the upload happened another way, or a tag was
+          # re-pushed. PyPI refuses duplicate versions regardless, so the only
+          # thing a hard failure adds here is a red X nobody can act on.
+          skip-existing: true
