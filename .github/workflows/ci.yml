@@ -52,7 +52,11 @@ jobs:
           test "$(/tmp/clean/bin/python -m pip list --format=freeze | grep -c -v '^\(pip\|setuptools\|wheel\|bulwark-scanner\)')" -eq 0
 
   self-scan:
-    # Dogfood: this repository's own agent configuration must stay clean.
+    # Dogfood, in two directions. Scanning a clean repository and getting a
+    # clean result proves almost nothing on its own -- a scanner that had
+    # silently stopped detecting anything would pass it too. So this job
+    # asserts both halves: the repository's own config stays clean, AND the
+    # installed tool still catches a project we know is bad.
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -63,10 +67,52 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -e .
-      - name: Scan
+
+      - name: This repository's own agent config must be clean
+        # Catches agent configuration accidentally committed to the project,
+        # which for a security tool would be its own kind of embarrassment.
         run: bulwark scan . --no-user-scope --format sarif -o bulwark.sarif --fail-on high
+
       - uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: bulwark.sarif
           category: bulwark
+
+      - name: Detection must still work end to end
+        # examples/vulnerable-project is deliberately unsafe. A clean exit here
+        # means detection has broken, so a passing scan is the failure case.
+        run: |
+          if bulwark scan examples/vulnerable-project --no-user-scope --fail-on high >/dev/null; then
+            echo "::error::Bulwark reported nothing on the deliberately vulnerable example."
+            exit 1
+          fi
+          bulwark scan examples/vulnerable-project --no-user-scope \
+                  --format json -o example.json --fail-on never
+          python - <<'PY'
+          import json, sys
+
+          # One rule per family. Asserting on all fifteen would break CI every
+          # time an edge-case rule is retuned; asserting on none would let a
+          # whole family stop firing unnoticed.
+          EXPECTED = {
+              "BW-INJ-001":  "tool poisoning",
+              "BW-CMP-001":  "lethal trifecta",
+              "BW-SEC-001":  "plaintext credential",
+              "BW-SUP-001":  "unpinned auto-install",
+              "BW-HOOK-001": "dangerous hook",
+              "BW-PRM-003":  "approval prompt disabled",
+          }
+          with open("example.json", encoding="utf-8") as fh:
+              report = json.load(fh)
+          fired = {f["rule_id"] for f in report["findings"] if not f["waived"]}
+
+          missing = sorted(set(EXPECTED) - fired)
+          if missing:
+              sys.exit("detection regressed, no longer firing: %s"
+                       % ", ".join("%s (%s)" % (r, EXPECTED[r]) for r in missing))
+
+          summary = report["summary"]
+          print("%d rules fired; posture %s/100 grade %s -- as expected"
+                % (len(fired), summary["posture_score"], summary["grade"]))
+          PY
