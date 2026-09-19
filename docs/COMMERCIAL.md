@@ -112,8 +112,8 @@ relicense.
 
 **Days 1-14 — ship it.**
 Publish to PyPI and GitHub. Register the GitHub Action on the Marketplace.
-Write one technical post that *demonstrates* a rug pull end to end rather than
-describing it, because the demo is the argument. Submit to the MCP ecosystem
+Publish [the launch post](launch-post.md), which demonstrates a rug pull end to
+end rather than describing one, because the demo is the argument. Submit to the MCP ecosystem
 lists. This costs nothing and is the whole foundation.
 
 **Days 15-45 — earn credibility.**
