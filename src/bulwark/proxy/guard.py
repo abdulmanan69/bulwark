@@ -42,6 +42,7 @@ from ..analyzers import injection
 from ..analyzers import secrets as secretlib
 from ..analyzers import text as textlib
 from ..core.models import Artifact, ArtifactKind
+from ..mcp.client import resolve_executable
 
 #: JSON-RPC error code used for policy refusals.  -32000 and below is the
 #: reserved "implementation-defined server error" range.
@@ -515,7 +516,9 @@ def pump(config: GuardConfig) -> int:
 
     try:
         process = subprocess.Popen(
-            [config.command, *config.args],
+            # Same Windows .CMD resolution the introspection client needs:
+            # without it, `bulwark proxy` cannot wrap any npx-launched server.
+            [resolve_executable(config.command), *config.args],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=None,  # let the server's own logs reach the host untouched

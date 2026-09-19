@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import textwrap
 from pathlib import Path
@@ -284,6 +285,86 @@ class TestIntrospection:
 
         assert "BW-INJ-001" not in {f.rule_id for f in offline.active_findings}
         assert "BW-INJ-001" in {f.rule_id for f in online.active_findings}
+
+
+# --------------------------------------------------------------------------
+# Executable resolution
+# --------------------------------------------------------------------------
+
+
+class TestExecutableResolution:
+    """Regression tests for launching servers through a shim.
+
+    Found against the real @modelcontextprotocol/server-everything, not against
+    a fixture: on Windows ``npx`` is ``npx.CMD``, and CreateProcess does not
+    apply PATHEXT the way a shell does, so ``Popen(["npx", ...])`` raised
+    "The system cannot find the file specified". Every earlier test used
+    ``sys.executable`` -- a real .exe -- so none of them could see it, while
+    every npx-launched MCP server was unreachable in practice.
+    """
+
+    def _write_shim(self, directory: Path, name: str, target: Path) -> Path:
+        """A launcher script of the kind package managers install."""
+        if sys.platform == "win32":
+            shim = directory / (name + ".cmd")
+            shim.write_text(
+                '@echo off\r\n"%s" "%s" %%*\r\n' % (sys.executable, target),
+                encoding="utf-8",
+            )
+        else:
+            shim = directory / name
+            shim.write_text(
+                '#!/bin/sh\nexec "%s" "%s" "$@"\n' % (sys.executable, target),
+                encoding="utf-8",
+            )
+            shim.chmod(0o755)
+        return shim
+
+    def test_bare_name_on_path_resolves_to_a_runnable_path(
+        self, tmp_path, monkeypatch
+    ):
+        shim_dir = tmp_path / "bin"
+        shim_dir.mkdir()
+        self._write_shim(shim_dir, "faketool", tmp_path / "unused.py")
+        monkeypatch.setenv("PATH", str(shim_dir) + os.pathsep + os.environ["PATH"])
+
+        resolved = mcp_client.resolve_executable("faketool")
+        assert Path(resolved).is_file()
+        assert resolved != "faketool", "a bare name is not executable on Windows"
+
+    def test_unknown_command_is_returned_unchanged(self):
+        # So the caller can still name what the user configured in the error.
+        assert (
+            mcp_client.resolve_executable("no-such-binary-xyz") == "no-such-binary-xyz"
+        )
+
+    def test_empty_command_is_returned_unchanged(self):
+        assert mcp_client.resolve_executable("") == ""
+
+    def test_a_server_launched_through_a_shim_completes_the_handshake(
+        self, tmp_path, server_script, monkeypatch
+    ):
+        """The exact shape of the bug: a server behind a launcher script."""
+        script = server_script(WELL_BEHAVED, "shimmed_server.py")
+        shim_dir = tmp_path / "bin"
+        shim_dir.mkdir()
+        self._write_shim(shim_dir, "mcpshim", script)
+        monkeypatch.setenv("PATH", str(shim_dir) + os.pathsep + os.environ["PATH"])
+
+        # Deliberately the bare name, as a real .mcp.json would contain.
+        with mcp_client.StdioClient("mcpshim", [], timeout=60) as client:
+            info = client.initialize()
+            tools = client.list_all("tools/list", "tools")
+
+        assert info["serverInfo"]["name"] == "subject"
+        assert {t["name"] for t in tools} == {"read_file", "run_command"}
+
+    def test_the_proxy_resolves_the_same_way(self):
+        # Both spawn sites must agree, or `scan --online` works while
+        # `bulwark proxy` fails on exactly the same configuration.
+        from bulwark.proxy import guard
+
+        assert guard.resolve_executable is mcp_client.resolve_executable
 
 
 # --------------------------------------------------------------------------

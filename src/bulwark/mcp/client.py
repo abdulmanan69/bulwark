@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -36,6 +37,26 @@ CLIENT_INFO = {"name": "bulwark-scanner", "version": "0.1.0"}
 
 #: Refuse to buffer more than this from a single server.
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+
+def resolve_executable(command: str) -> str:
+    """Resolve a command name to a path the OS can actually execute.
+
+    On Windows the launchers this tool cares about most -- ``npx``, ``pnpx``,
+    ``bunx``, ``yarn`` -- are ``.CMD`` shims, and Windows' CreateProcess does
+    not apply PATHEXT the way a shell does.  ``Popen(["npx", ...])`` therefore
+    fails with "The system cannot find the file specified" even though ``npx``
+    runs fine in the same terminal, which would make every npx-launched MCP
+    server unreachable.  ``shutil.which`` does apply PATHEXT and returns the
+    full ``npx.CMD`` path, which CreateProcess accepts.
+
+    Returns the original string when the command cannot be found, so the
+    caller still raises a useful "could not start" error naming what the user
+    actually configured rather than an empty path.
+    """
+    if not command:
+        return command
+    return shutil.which(command) or command
 
 
 class McpError(Exception):
@@ -84,7 +105,7 @@ class StdioClient:
 
         try:
             self.process = subprocess.Popen(
-                [self.command, *self.args],
+                [resolve_executable(self.command), *self.args],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
