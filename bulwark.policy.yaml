@@ -1,0 +1,17 @@
+# Bulwark's policy for scanning Bulwark.
+#
+# This file exists so that `bulwark scan` inside this repository gives the
+# answer a reader expects. It doubles as a worked example: see
+# bulwark.policy.example.yaml for every option with commentary.
+
+fail_on: HIGH
+
+# examples/vulnerable-project is deliberately unsafe -- it is the fixture the
+# README and the launch post walk through, and CI scans it separately and
+# requires it to FAIL. Excluding it here keeps a scan of this repository
+# reporting on this repository, rather than on a teaching aid.
+#
+# Exclusion applies during discovery, so nothing inside it can contribute to a
+# finding, including composite rules that carry no path of their own.
+exclude:
+  - "examples/vulnerable-project/**"

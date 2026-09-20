@@ -281,10 +281,33 @@ this: a benign corpus must produce zero findings.
 git clone https://github.com/abdulmanan69/bulwark
 cd bulwark
 pip install -e ".[dev]"
-pytest                                  # 266 tests
-pytest --cov=bulwark --cov-report=term  # 85% coverage
+pytest                                  # 285 tests
+pytest --cov=bulwark --cov-report=term
 ruff check src tests
 ```
+
+### Running it on this repository
+
+`examples/vulnerable-project/` is deliberately unsafe -- it is the fixture the
+walkthrough above uses. `bulwark.policy.yaml` excludes it, so a plain
+`bulwark scan` here reports on the project rather than on the teaching aid.
+To see the fixture light up, point at it directly:
+
+```bash
+bulwark scan examples/vulnerable-project   # grade F, 22 findings, all intentional
+```
+
+### `bulwark: command not found` after installing
+
+pip installed the executable into your user scripts directory and that
+directory is not on your PATH. Either use the module form, which always works:
+
+```bash
+python -m bulwark scan
+```
+
+or add the directory pip printed during install to your PATH. On Windows that
+is usually `%APPDATA%\Python\Python3xx\Scripts`.
 
 See [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) for what Bulwark does and does
 not defend against, and [docs/RULES.md](docs/RULES.md) for the full rule
