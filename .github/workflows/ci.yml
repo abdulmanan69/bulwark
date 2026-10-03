@@ -79,7 +79,7 @@ jobs:
         run: |
           bulwark scan . --no-user-scope --exclude 'examples/**'                   --format sarif -o bulwark.sarif --fail-on high
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: bulwark.sarif
